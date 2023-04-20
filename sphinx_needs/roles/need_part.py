@@ -74,11 +74,12 @@ def update_need_with_parts(env: BuildEnvironment, need, part_nodes: List[NeedPar
 
         from sphinx.util.nodes import make_refnode
 
-        part_ref_node = make_refnode(builder, need["docname"], need["docname"], part_id_ref, part_link_node)
-        part_ref_node["classes"] += ["needs-id"]
+        part_ref_node = nodes.inline(classes=["needs-id"])
+        part_ref_node.append(make_refnode(builder, need["docname"], need["docname"], part_id_ref, part_link_node))
 
         part_node.children = []
-        node_need_part_line = nodes.inline(ids=[part_id_ref], classes=["need-part"])
+        node_need_part_line = nodes.inline(classes=["need-part"])
+        node_need_part_line.append(nodes.target("", "", ids=[part_id_ref]))
         node_need_part_line.append(part_text_node)
         node_need_part_line.append(part_ref_node)
         part_node.append(node_need_part_line)
