@@ -274,6 +274,8 @@ def setup(app: Sphinx) -> Dict[str, Any]:
     # add jinja context option
     app.add_config_value("needs_render_context", {}, "html", types=[dict])
 
+    app.add_config_value("needs_custom_renderer", {}, "html", types=[dict])
+
     # Define nodes
     app.add_node(Need, html=(html_visit, html_depart), latex=(latex_visit, latex_depart))
     app.add_node(

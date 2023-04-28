@@ -146,6 +146,10 @@ def build_need(layout, node, app: Sphinx, style=None, fromdocname: Optional[str]
     need_id = node.attributes["ids"][0]
     need_data = needs[need_id]
 
+    if app.builder.name in app.config.needs_custom_renderer:
+        node.attributes["custom-renderer"] = app.config.needs_custom_renderer[app.builder.name]
+        return
+
     if need_data["hide"]:
         node.parent.replace(node, [])
         return

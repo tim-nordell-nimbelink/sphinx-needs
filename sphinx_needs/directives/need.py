@@ -551,8 +551,12 @@ def html_depart(self, node) -> None:
 
 
 def latex_visit(self, node) -> None:
-    pass
+    if 'custom-renderer' in node.attributes:
+        if 'visit' in node.attributes['custom-renderer']:
+            return node.attributes['custom-renderer']['visit'](self, node)
 
 
 def latex_depart(self, node) -> None:
-    pass
+    if 'custom-renderer' in node.attributes:
+        if 'depart' in node.attributes['custom-renderer']:
+            return node.attributes['custom-renderer']['depart'](self, node)
