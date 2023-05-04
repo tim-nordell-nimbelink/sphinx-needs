@@ -373,13 +373,13 @@ def complete_need_link(
     return []
 
 
-def generate_hash(user_name: str, doc_uri: str, need_prefix: str, line_number: int) -> str:
+def generate_hash(user_name: str, doc_uri: str, need_prefix: str, line_number: int, length: int) -> str:
     salt = os.urandom(blake2b.SALT_SIZE)  # pylint: disable=no-member
     return blake2b(
         f"{user_name}{doc_uri}{need_prefix}{line_number}".encode(),
         digest_size=4,
         salt=salt,
-    ).hexdigest()
+        ).hexdigest()[0:length].upper()
 
 
 class JinjaHelperFunction:
@@ -404,7 +404,7 @@ class JinjaHelperFunction:
 
         need_type = self.need_type
         if not need_type:
-            match = re.search(".. ([a-z]+)::", self.lines[line_number - 1])
+            match = re.search("^ *\.\. ([a-z]+)::", self.lines[line_number - 1])
             # Check for MyST/Markdown style
             if not match and self.params.doc.filename.endswith(".md"):
                 match = re.search("```{([a-z]+)}", self.lines[line_number - 1])
@@ -416,14 +416,20 @@ class JinjaHelperFunction:
             else:
                 return "ID"
 
-        need_prefix = need_type.upper()
+        need_prefix = need_type.upper() + "_"
+        for _, I in self.ls.needs_store.need_types.items():
+            if I["directive"] == need_type:
+                need_prefix = I["prefix"]
+                break
 
-        hash_part = generate_hash(user_name, doc_uri, need_prefix, line_number)
-        need_id = need_prefix + "_" + hash_part
+        need_length = self.ls.needs_store.needs_id_length
+
+        hash_part = generate_hash(user_name, doc_uri, need_prefix, line_number, need_length)
+        need_id = need_prefix +  hash_part
         # re-generate hash if ID is already in use
         while need_id in self.ls.needs_store.needs:
-            hash_part = generate_hash(user_name, doc_uri, need_prefix, line_number)
-            need_id = need_prefix + "_" + hash_part
+            hash_part = generate_hash(user_name, doc_uri, need_prefix, line_number, need_length)
+            need_id = need_prefix + hash_part
         return need_id
 
     def from_title(self) -> str:
@@ -531,7 +537,11 @@ def complete_directive(
     if isinstance(ls.rst, SphinxLanguageServer) and ls.rst.app:
         custom_directive_snippets = ls.rst.app.config.needs_ide_directive_snippets
 
-    for need_type, title in ls.needs_store.declared_types.items():
+    for _, I in ls.needs_store.need_types.items():
+        need_type = I["directive"]
+        title = I["title"]
+        need_prefix = I["prefix"]
+
         # calculate directive snippets completion label
         label = f".. {need_type}::"
         if params.doc.filename.endswith(".md") and not found_eval_rst_block(lines, params):
@@ -557,7 +567,7 @@ def complete_directive(
                 "```{" + need_type + "} " + "${1:title}\n"
                 ":id: ${2:" + generate_need_id(ls, params, lines, need_type=need_type) + "}\n"
                 ":status: open\n\n"
-                "${3:content}.\n"
+                "${2:content.}\n"
                 "```$0"
             )
             md_detail = "Markdown directive snippet"
@@ -574,9 +584,9 @@ def complete_directive(
         else:
             text = (
                 " " + need_type + ":: ${1:title}\n"
-                "\t:id: ${2:" + generate_need_id(ls, params, lines, need_type=need_type) + "}\n"
+                "\t:id: " + generate_need_id(ls, params, lines, need_type=need_type) + "\n"
                 "\t:status: open\n\n"
-                "\t${3:content}.\n$0"
+                "\t${2:content.}\n$0"
             )
             items.append(
                 CompletionItem(

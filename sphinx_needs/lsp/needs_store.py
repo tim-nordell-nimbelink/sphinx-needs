@@ -76,6 +76,12 @@ class NeedsStore:
             for item in need_types:
                 self.declared_types[item["directive"]] = item["title"]
 
+            self.need_types = {}
+            for item in need_types:
+                self.need_types[item["directive"]] = item
+
+            self.needs_id_length = getattr(module, "needs_id_length", 5)
+
     def load_needs(self, json_file: Path) -> None:
 
         self.docs_per_type = {}
