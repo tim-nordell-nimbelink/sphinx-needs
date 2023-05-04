@@ -6,6 +6,7 @@ import typing
 from hashlib import blake2b
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
+from copy import copy
 
 from esbonio.lsp import LanguageFeature
 from esbonio.lsp.rst import CompletionContext, DefinitionContext, HoverContext
@@ -70,7 +71,7 @@ class NeedlsFeatures(LanguageFeature):
         self.needs_store = NeedsStore()
 
     # Open-Needs-IDE language features completion triggers: '>', '/', ':', '.'
-    completion_triggers = [re.compile(r"(>)|(\.\.)|(:)|(\/)")]
+    completion_triggers = [re.compile(r"(>)|(^ *\.\. [a-z]*:{0,2})|(^ *:?i?d?:? ?)|(:)|(\/)")]
 
     def complete(self, context: CompletionContext) -> List[CompletionItem]:
 
@@ -111,12 +112,12 @@ class NeedlsFeatures(LanguageFeature):
                 return complete_need_link(self, context, lines, line, new_word)
 
             # if word starts with ':', complete_role_or_option
-            if word.startswith(":"):
+            if line.lstrip().startswith(":"):
                 return complete_role_or_option(self, context, lines, word)
 
             # if word starts with '..', complete_directive
-            if word.startswith(".."):
-                return complete_directive(self, context, lines, word)
+            if line.lstrip().startswith(".."):
+                return complete_directive(self, context, lines, line.lstrip())
 
             return []
 
@@ -126,7 +127,6 @@ class NeedlsFeatures(LanguageFeature):
 
     def hover(self, context: HoverContext) -> str:
         """Return textDocument/hover response value."""
-        self.logger.debug(f"hover params: {context}")
 
         if isinstance(self.rst, SphinxLanguageServer) and self.rst.app:
             # get and check needs.json path
@@ -404,7 +404,7 @@ class JinjaHelperFunction:
 
         need_type = self.need_type
         if not need_type:
-            match = re.search("^ *\.\. ([a-z]+)::", self.lines[line_number - 1])
+            match = re.search(r"^ *\.\. ([a-z]+)::.*$", self.lines[line_number - 1])
             # Check for MyST/Markdown style
             if not match and self.params.doc.filename.endswith(".md"):
                 match = re.search("```{([a-z]+)}", self.lines[line_number - 1])
@@ -537,10 +537,19 @@ def complete_directive(
     if isinstance(ls.rst, SphinxLanguageServer) and ls.rst.app:
         custom_directive_snippets = ls.rst.app.config.needs_ide_directive_snippets
 
+    # Extract the partial directive so we can add the appropriate needs
+    partial_type = ''
+    if ' ' in word:
+        partial_type = word.split(' ', maxsplit = 2)[1]
+        if ':' in partial_type:
+            partial_type = partial_type.split(':', maxsplit = 2)[0]
+
     for _, I in ls.needs_store.need_types.items():
         need_type = I["directive"]
         title = I["title"]
-        need_prefix = I["prefix"]
+
+        if not need_type.startswith(partial_type):
+            continue
 
         # calculate directive snippets completion label
         label = f".. {need_type}::"
@@ -559,6 +568,7 @@ def complete_directive(
                     insert_text_format=InsertTextFormat.Snippet,
                     kind=CompletionItemKind.Snippet,
                     additional_text_edits=[text_edit],
+                    sort_text="_" + need_type
                 )
             )
         elif params.doc.filename.endswith(".md") and not found_eval_rst_block(lines, params):
@@ -582,19 +592,22 @@ def complete_directive(
                 )
             )
         else:
-            text = (
-                " " + need_type + ":: ${1:title}\n"
+            tmp = copy(text_edit)
+            tmp.new_text = (
+                ".. " + need_type + ":: ${1:title}\n"
                 "\t:id: " + generate_need_id(ls, params, lines, need_type=need_type) + "\n"
                 "\t:status: open\n\n"
                 "\t${2:content.}\n$0"
             )
+
             items.append(
                 CompletionItem(
                     label=label,
                     detail=title,
-                    insert_text=text,
                     insert_text_format=InsertTextFormat.Snippet,
                     kind=CompletionItemKind.Snippet,
+                    text_edit=tmp,
+                    data={"need_type": need_type},
                 )
             )
 
@@ -604,6 +617,9 @@ def complete_directive(
 def complete_role_or_option(
     ls: NeedlsFeatures, params: CompletionContext, lines: List[str], word: str
 ) -> List[CompletionItem]:
+
+    ret = []
+
     # Calculate need role snippet for MySt/Markdown and rst
     if params.doc.filename.endswith(".md"):
         # support MyST/Markdown
@@ -612,7 +628,7 @@ def complete_role_or_option(
         line_number = params.position.line
         substitution = word[word.find(":") :]
         start_char = lines[line_number].find(substitution)
-        need_role_item = CompletionItem(
+        ret.append(CompletionItem(
             label="md::need:",
             detail="Markdown need role",
             insert_text="{need}`${1:ID}`$0",
@@ -630,26 +646,28 @@ def complete_role_or_option(
                     new_text="",
                 )
             ],
-        )
+            preselect=True,
+        ))
     else:
-        need_role_item = CompletionItem(
+        ret.append(CompletionItem(
             label=":need:",
             detail="need role",
             insert_text="need:`${1:ID}` $0",
             insert_text_format=InsertTextFormat.Snippet,
             kind=CompletionItemKind.Snippet,
-        )
+        ))
 
-    return [
-        CompletionItem(
-            label=":id:",
-            detail="needs option",
-            insert_text="id: ${1:" + generate_need_id(ls, params, lines) + "}\n$0",
-            insert_text_format=InsertTextFormat.Snippet,
-            kind=CompletionItemKind.Snippet,
-        ),
-        need_role_item,
-    ]
+    if ":id:"[0:len(word)] == word:
+        id=":id: " + generate_need_id(ls, params, lines)
+        ret.append(CompletionItem(
+                label=id,
+                detail="needs option",
+                kind=CompletionItemKind.Snippet,
+                insert_text=id,
+                sort_text="_id"
+            ))
+
+    return ret
 
 
 def esbonio_setup(rst: SphinxLanguageServer) -> None:
