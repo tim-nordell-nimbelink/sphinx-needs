@@ -373,7 +373,11 @@ def save_matplotlib_figure(app: Sphinx, figure: FigureBase, basename: str, fromd
 
     abs_file_path = os.path.join(image_folder, f"{basename}.{ext}")
     if abs_file_path not in env.images:
-        figure.savefig(os.path.join(env.app.srcdir, abs_file_path))
+        if builder.name == 'latex':
+            figure.savefig(os.path.join(env.app.srcdir, abs_file_path),
+                           transparent=True)
+        else:
+            figure.savefig(os.path.join(env.app.srcdir, abs_file_path))
         env.images.add_file(fromdocname, abs_file_path)
 
     image_node = nodes.image()
